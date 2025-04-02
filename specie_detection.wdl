@@ -41,6 +41,8 @@ task Kraken2_PE {
   
   }
   command <<<
+        mkdir db
+        tar -C ./db -xzvf ~{db}
 
         # determine if paired-end or not
         if ! [ -z ~{read2} ]; then
@@ -56,7 +58,7 @@ task Kraken2_PE {
 
         # Run Kraken2
         echo "Running Kraken2..."
-        kraken2 $mode $compressed --threads ~{cpu} --use-names --db ~{db} \
+        kraken2 $mode $compressed --threads ~{cpu} --use-names --db ./db \
         --report ~{sample_id}.report \
         --paired ~{read1} ~{read1} \
         --output -  
