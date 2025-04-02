@@ -5,7 +5,6 @@ workflow Specie_Detection {
     input {
         File read1 
         File read2
-        File db  
         String sample_id 
 
     }
@@ -14,7 +13,6 @@ workflow Specie_Detection {
         input:
             read1 = read1,
             read2 = read2,
-            db    = db,
             sample_id = sample_id
             
     }
@@ -30,9 +28,8 @@ workflow Specie_Detection {
     }
 }
 
-task Kraken2_PE {
+task Detect_Specie {
   input {
-    File db
     File read1
     File read2
     String sample_id
