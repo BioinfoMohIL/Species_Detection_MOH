@@ -94,11 +94,12 @@ task GetReads {
 
         #Download reads by dataset ID
         for index in ${!dataset_id_array[@]}; do
-        dataset_id=${dataset_id_array[$index]}
-        mkdir ./dataset_${dataset_id} && cd ./dataset_${dataset_id}
-        echo "dataset download: ${bs_command} download dataset -i ${dataset_id} -o . --retry"
-        ${bs_command} download dataset --retry -i ${dataset_id} -o . --retry && cd ..
-        echo -e "downloaded data: \n $(ls ./dataset_*/*)"
+            dataset_id=${dataset_id_array[$index]}
+            mkdir ./dataset_${dataset_id} && cd ./dataset_${dataset_id}
+        
+            echo "dataset download: ${bs_command} download dataset -i ${dataset_id} -o . --retry"
+            ${bs_command} download dataset --retry -i ${dataset_id} -o . --retry && cd ..
+            echo -e "downloaded data: \n $(ls ./dataset_*/*)"
         done
 
         # rename FASTQ files to add back in underscores that Illumina/Basespace changed into hyphens
