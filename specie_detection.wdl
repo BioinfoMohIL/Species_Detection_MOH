@@ -188,6 +188,12 @@ task Detect_Specie {
     runtime {
         docker: docker
         cpu: cpu
+        preemptible: 0
+        maxRetries: 3
     }
 }
 
+
+ 
+  
+ 
