@@ -38,7 +38,7 @@ task Detect_Specie {
   
   }
   command <<<
-        ./specie_detection--read1 ~{read1} --read2 ~{read2} --cpu ~{cpu} --output_report ~{sample_id}.report --specie_detected specie_detected.txt
+        ./specie_detection --read1 ~{read1} --read2 ~{read2} --cpu ~{cpu} --output_report ~{sample_id}.report --specie_detected specie_detected.txt
     >>>
 
     output {
