@@ -257,7 +257,11 @@ task MergeReports {
 
     output {
         File merged_report = "merged_report.txt"
+    }
+
+    runtime {
         docker: "ubuntu:20.04"
+
     }
 }
 
