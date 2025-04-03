@@ -1,44 +1,95 @@
 version 1.0
 
-
 workflow Specie_Detection {
     input {
-        String sample_id 
-        String basespace_sample_name
-        String basespace_collection_id
+        String basespace_collection_id 
         String api_server
         String access_token
+        String? sample_prefix
+
 
     }
 
-    call GetReads {
+    call GetReadsList {
         input:
             basespace_collection_id = basespace_collection_id,
             access_token = access_token,
             api_server = api_server,
-            basespace_sample_name = basespace_sample_name
+            sample_prefix = sample_prefix
+
     }
 
-    call Detect_Specie {
+      scatter(sample_name in GetReadsList.samples_name) {
+        call FetchReads {
+          input:
+            basespace_sample_name = sample_name,
+            basespace_collection_id = basespace_collection_id,
+            api_server = api_server,
+            access_token = access_token
+        }
+
+        call Detect_Specie {
+            input:
+                read1 = FetchReads.read1,
+                read2 = FetchReads.read2,
+                sample_id = sample_name
+        }
+        
+    }
+
+    call MergeReports {
         input:
-            read1 = GetReads.read1,
-            read2 = GetReads.read2,
-            sample_id = sample_id
-            
+            species_detected_list = Detect_Specie.specie_detected
     }
 
     output {
-        File report = Detect_Specie.report
-        String specie_detected = Detect_Specie.specie_detected
+        File reads_list = GetReadsList.reads_list
+        Array[String] samples_name = GetReadsList.samples_name
+        File merged_report = MergeReports.merged_report
+    
     }
 
-    meta {
-        author: "David Maimoun"
-        description: "Classify paired-end reads using Kraken2"
-    }
+  
 }
 
-task GetReads {
+task GetReadsList {
+    input {  
+        String basespace_collection_id
+        String api_server 
+        String access_token
+        String? sample_prefix
+        String docker = "us-docker.pkg.dev/general-theiagen/theiagen/basespace_cli:1.2.1"
+
+    }
+
+    command <<<       
+        bs project content --name ~{basespace_collection_id} \
+            --api-server=~{api_server} \
+            --access-token=~{access_token} \
+            --retry > list_fetched.txt
+
+        if [ -z "~{sample_prefix}" ]; then
+            grep -o "[A-Z0-9_]*\.fastq\.gz" list_fetched.txt > reads_list.txt
+        else
+            grep -o "~{sample_prefix}[A-Z0-9_]*\.fastq\.gz" list_fetched.txt > reads_list.txt
+        fi
+
+        grep -o "[A-Z0-9_]*_R1_[0-9]*\.fastq\.gz" reads_list.txt | cut -d '_' -f 1 > sample_names.txt
+    
+    >>>
+
+    output {
+        File reads_list = "reads_list.txt"
+        Array[String] samples_name = read_lines("sample_names.txt")
+    }
+
+    runtime {
+        docker: docker
+        preemptible: 1
+  }
+}
+
+task FetchReads {
     input {
         String basespace_sample_name
         String? basespace_sample_id   
@@ -79,7 +130,9 @@ task GetReads {
         else 
             #Try Grabbing BaseSpace Dataset ID from project name
             echo "Could not locate a run_id via Basespace runs, attempting to search Basespace projects now..."
+            
             project_id=$(${bs_command} list project --retry | grep "~{basespace_collection_id}" | awk -F "|" '{ print $3 }' | awk '{$1=$1;print}' )
+            
             echo "project_id: ${project_id}" 
 
             if [[ ! -z "${project_id}" ]]; then 
@@ -145,13 +198,12 @@ task GetReads {
   }
 }
 
-
-
 task Detect_Specie {
   input {
     File read1
     File read2
     String sample_id
+    
     String docker = "bioinfomoh/specie_detection:1"
     Int cpu = 10
   
@@ -178,7 +230,7 @@ task Detect_Specie {
             --report "~{sample_id}.report" --paired "~{read1}" "~{read2}" --output -
 
         # Extract taxonomy information
-        awk -F'\t' '$4 == "S" {gsub(/^[ \t]+/, "", $6); print $6; exit}' "~{sample_id}.report" > specie_detected.txt
+        awk -F'\t' '$4 == "S" {gsub(/^[ \t]+/, "", $6); print "~{sample_id}", $6; exit}' "~{sample_id}.report" > specie_detected.txt
     >>>
 
     output {
@@ -194,7 +246,17 @@ task Detect_Specie {
     }
 }
 
+task MergeReports {
+    input {
+        Array[String] species_detected_list
+    }
 
- 
-  
- 
+    command <<<
+        echo "~{sep='\n' species_detected_list}" > merged_report.txt
+    >>>
+
+    output {
+        File merged_report = "merged_report.txt"
+    }
+}
+
