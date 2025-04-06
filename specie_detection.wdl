@@ -1,6 +1,6 @@
 version 1.0
 
-workflow Specie_Detection {
+workflow SpecieDetection {
     input {
         String basespace_collection_id 
         String api_server
@@ -45,8 +45,9 @@ workflow Specie_Detection {
     output {
         File reads_list = GetReadsList.reads_list
         Array[String] samples_name = GetReadsList.samples_name
-        File merged_report = MergeReports.merged_report
-    
+        File species_detected = MergeReports.species_detected
+        # File read1 = FetchReads.read1
+        # File read2 = FetchReads.read2
     }
 
   
@@ -186,8 +187,6 @@ task FetchReads {
     >>>
 
     output {
-        # String read1_name = read_string('read1_name.txt') 
-        # String read2_name = read_string('read2_name.txt')  
         File read1          = 'fwd.fastq.gz'
         File read2          = 'rev.fastq.gz'
     }
@@ -208,6 +207,7 @@ task Detect_Specie {
     Int cpu = 10
   
   }
+
   command <<<
         mode=""
         compressed=""
@@ -229,13 +229,50 @@ task Detect_Specie {
         kraken2 $mode $compressed --threads "~{cpu}" --use-names --db /app/db/kraken_db \
             --report "~{sample_id}.report" --paired "~{read1}" "~{read2}" --output -
 
-        # Extract taxonomy information
-        awk -F'\t' '$4 == "S" {gsub(/^[ \t]+/, "", $6); print "~{sample_id}", $6; exit}' "~{sample_id}.report" > specie_detected.txt
+        declare -A species
+        species["NM"]="Neisseria Meningitidis"
+        species["NG"]="Neisseria Gonorrhoeae"
+        species["HI"]="Haemophilus Influenzae"
+        species["SH"]="Salmonella"
+        species["SO"]="Salmonella"
+        species["LC"]="Listeria monocytogenes"
+        species["LF"]="Listeria monocytogenes"
+        species["SG"]="Shigella"
+        species["CA"]="Campylobacter"
+        species["VIB"]="Vibrio"
+        species["V"]="Vibrio"
+        species["EC"]="Escherichia coli"
+        species["SA"]="Staphylococcus aureus"
+        species["BP"]="Bordetella pertussis"
+        species["SP"]="Streptococcus pneumoniae"
+        species["ST"]="Streptococcus pyogenes"
+        species["ST"]="Streptococcus agalactiae"
+        species["LG"]="Legionella pneumophila"
+        species["LW"]="Legionella pneumophila"
+        species["CB"]="Corynebacterium diphtheriae"
+        species["HI"]="Haemophilus influenzae"
+        species["NM"]="Neisseria meningitidis"
+        species["M" ]="Neisseria meningitidis" 
+
+        prefix=$(echo "~{sample_id}" | grep -o '^[^0-9]*')
+
+        # Extract detected species from report
+        detected=$(awk -F'\t' '$4 == "S" {gsub(/^[ \t]+/, "", $6); print $6; exit}' "~{sample_id}.report")
+
+        # Convert both to lowercase for case-insensitive comparison
+        detected_lower=$(echo "$detected" | tr '[:upper:]' '[:lower:]')
+        expected_lower=$(echo "${species[$prefix]}" | tr '[:upper:]' '[:lower:]')
+
+        if [[ "$detected_lower" == *"$expected_lower"* ]]; then
+            echo "~{sample_id},${detected},+" > specie_detected.csv
+        else
+            echo "~{sample_id},${detected},xxx" > specie_detected.csv
+        fi
     >>>
 
     output {
         File report = "~{sample_id}.report"
-        String specie_detected = read_string("specie_detected.txt")
+        String specie_detected = read_string("specie_detected.csv")
     }
 
     runtime {
@@ -252,11 +289,13 @@ task MergeReports {
     }
 
     command <<<
-        echo "~{sep='\n' species_detected_list}" > merged_report.txt
+        echo "Sample,Detected,Match" > species_detected.csv
+        echo "~{sep='\n' species_detected_list}" >> species_detected.csv
+        
     >>>
 
     output {
-        File merged_report = "merged_report.txt"
+        File species_detected = "species_detected.csv"
     }
 
     runtime {
