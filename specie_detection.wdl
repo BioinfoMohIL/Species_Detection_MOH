@@ -280,7 +280,8 @@ task Detect_Specie {
     runtime {
         docker: docker
         cpu: cpu
-        maxRetries: 3
+        maxRetries: 2
+        continueOnReturnCode: true
     }
 }
 
