@@ -196,6 +196,7 @@ task FetchReads {
         docker: docker
         preemptible: 1
         maxRetries: 3
+        continueOnReturnCode: true
   }
 }
 
