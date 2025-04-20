@@ -194,7 +194,7 @@ task FetchReads {
 
     runtime {
         docker: docker
-        memory: "16GB"
+        memory: "24GB"
         maxRetries: 3
   }
 }
