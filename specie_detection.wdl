@@ -194,7 +194,6 @@ task FetchReads {
 
     runtime {
         docker: docker
-        preemptible: 1
         maxRetries: 3
         continueOnReturnCode: true
   }
@@ -281,7 +280,6 @@ task Detect_Specie {
     runtime {
         docker: docker
         cpu: cpu
-        preemptible: 0
         maxRetries: 3
     }
 }
