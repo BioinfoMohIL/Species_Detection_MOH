@@ -195,7 +195,6 @@ task FetchReads {
     runtime {
         docker: docker
         maxRetries: 3
-        memory: "12GB"
         continueOnReturnCode: true
   }
 }
@@ -280,9 +279,11 @@ task Detect_Specie {
 
     runtime {
         docker: docker
+        memory: "12GB"
         cpu: cpu
-        maxRetries: 2
+        maxRetries: 1
         continueOnReturnCode: true
+
     }
 }
 
