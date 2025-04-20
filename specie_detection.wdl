@@ -87,6 +87,7 @@ task GetReadsList {
     runtime {
         docker: docker
         preemptible: 1
+        maxRetries: 1
   }
 }
 
@@ -194,6 +195,7 @@ task FetchReads {
     runtime {
         docker: docker
         preemptible: 1
+        maxRetries: 3
   }
 }
 
