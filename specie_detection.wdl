@@ -279,7 +279,7 @@ task Detect_Specie {
 
     runtime {
         docker: docker
-        memory: "12GB"
+        memory: "16GB"
         cpu: cpu
         maxRetries: 1
         continueOnReturnCode: true
