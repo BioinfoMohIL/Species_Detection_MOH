@@ -7,7 +7,6 @@ workflow SpecieDetection {
         String access_token
         String? sample_prefix
 
-
     }
 
     call GetReadsList {
@@ -19,23 +18,31 @@ workflow SpecieDetection {
 
     }
 
-      scatter(sample_name in GetReadsList.samples_name) {
-        call FetchReads {
-          input:
-            basespace_sample_name = sample_name,
-            basespace_collection_id = basespace_collection_id,
-            api_server = api_server,
-            access_token = access_token
-        }
+    call SplitSamples {
+        input:
+        samples = GetReadsList.samples_name,
+        chunk_size = 10
+    }
 
-        call Detect_Specie {
-            input:
-                read1 = FetchReads.read1,
-                read2 = FetchReads.read2,
-                sample_id = sample_name
+    scatter(chunk in SplitSamples.sample_chunks) {
+        scatter(sample_name in chunk) {
+            call FetchReads {
+                input:
+                    basespace_sample_name = sample_name,
+                    basespace_collection_id = basespace_collection_id,
+                    api_server = api_server,
+                    access_token = access_token
+            }
+
+            call Detect_Specie {
+                input:
+                    read1 = FetchReads.read1,
+                    read2 = FetchReads.read2,
+                    sample_id = sample_name
+            }
         }
         
-    } max_parallelism = 10
+    } 
 
     call MergeReports {
         input:
@@ -88,6 +95,38 @@ task GetReadsList {
         docker: docker
         preemptible: 1
         maxRetries: 1
+  }
+}
+
+task SplitSamples {
+  input {
+    Array[String] samples
+    Int chunk_size
+  }
+
+  File samples_file = write_lines(samples)
+
+  command <<<
+    python3 -c "
+    import json
+
+    with open('~{samples_file}', 'r') as f:
+        samples = [line.strip() for line in f.readlines() if line.strip()]
+
+    chunk_size = ~{chunk_size}
+    chunks = [samples[i:i+chunk_size] for i in range(0, len(samples), chunk_size)]
+
+    with open('chunks.json', 'w') as f:
+        json.dump(chunks, f)
+    "
+    >>>
+
+  output {
+    Array[Array[String]] sample_chunks = read_json("chunks.json")
+  }
+
+  runtime {
+    docker: "python:3.9"
   }
 }
 
