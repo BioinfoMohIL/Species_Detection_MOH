@@ -328,7 +328,7 @@ task Detect_Specie {
 
 task MergeReports {
     input {
-        Array[String] species_detected_list
+        Array[Array[String]] species_detected_list
     }
 
     command <<<
