@@ -1,11 +1,12 @@
 version 1.0
 
-workflow SpecieDetection {
+workflow Specie_Detection {
     input {
         String basespace_collection_id 
         String api_server
         String access_token
         String? sample_prefix
+
 
     }
 
@@ -18,31 +19,23 @@ workflow SpecieDetection {
 
     }
 
-    call SplitSamples {
-        input:
-        samples = GetReadsList.samples_name,
-        chunk_size = 50
-    }
+      scatter(sample_name in GetReadsList.samples_name) {
+        call FetchReads {
+          input:
+            basespace_sample_name = sample_name,
+            basespace_collection_id = basespace_collection_id,
+            api_server = api_server,
+            access_token = access_token
+        }
 
-    scatter(chunk in SplitSamples.sample_chunks) {
-        scatter(sample_name in chunk) {
-            call FetchReads {
-                input:
-                    basespace_sample_name = sample_name,
-                    basespace_collection_id = basespace_collection_id,
-                    api_server = api_server,
-                    access_token = access_token
-            }
-
-            call Detect_Specie {
-                input:
-                    read1 = FetchReads.read1,
-                    read2 = FetchReads.read2,
-                    sample_id = sample_name
-            }
+        call Detect_Specie {
+            input:
+                read1 = FetchReads.read1,
+                read2 = FetchReads.read2,
+                sample_id = sample_name
         }
         
-    } 
+    }
 
     call MergeReports {
         input:
@@ -52,9 +45,8 @@ workflow SpecieDetection {
     output {
         File reads_list = GetReadsList.reads_list
         Array[String] samples_name = GetReadsList.samples_name
-        File species_detected = MergeReports.species_detected
-        # File read1 = FetchReads.read1
-        # File read2 = FetchReads.read2
+        File species_detected_report = MergeReports.species_detected_report
+    
     }
 
   
@@ -94,39 +86,6 @@ task GetReadsList {
     runtime {
         docker: docker
         preemptible: 1
-        maxRetries: 1
-  }
-}
-
-task SplitSamples {
-  input {
-    Array[String] samples
-    Int chunk_size
-  }
-
-  File samples_file = write_lines(samples)
-
-  command <<<
-    python3 -c "
-    import json
-
-    with open('~{samples_file}', 'r') as f:
-        samples = [line.strip() for line in f.readlines() if line.strip()]
-
-    chunk_size = ~{chunk_size}
-    chunks = [samples[i:i+chunk_size] for i in range(0, len(samples), chunk_size)]
-
-    with open('chunks.json', 'w') as f:
-        json.dump(chunks, f)
-    "
-    >>>
-
-  output {
-    Array[Array[String]] sample_chunks = read_json("chunks.json")
-  }
-
-  runtime {
-    docker: "python:3.9"
   }
 }
 
@@ -227,14 +186,16 @@ task FetchReads {
     >>>
 
     output {
+        # String read1_name = read_string('read1_name.txt') 
+        # String read2_name = read_string('read2_name.txt')  
         File read1          = 'fwd.fastq.gz'
         File read2          = 'rev.fastq.gz'
     }
 
     runtime {
         docker: docker
-        memory: "16GB"
-        maxRetries: 3
+        memory: "24GB"
+        maxRetries: 1
   }
 }
 
@@ -245,10 +206,9 @@ task Detect_Specie {
     String sample_id
     
     String docker = "bioinfomoh/specie_detection:1"
-    Int cpu = 16
+    Int cpu = 20
   
   }
-
   command <<<
         mode=""
         compressed=""
@@ -270,75 +230,34 @@ task Detect_Specie {
         kraken2 $mode $compressed --threads "~{cpu}" --use-names --db /app/db/kraken_db \
             --report "~{sample_id}.report" --paired "~{read1}" "~{read2}" --output -
 
-        declare -A species
-        species["NM"]="Neisseria Meningitidis"
-        species["NG"]="Neisseria Gonorrhoeae"
-        species["HI"]="Haemophilus Influenzae"
-        species["SH"]="Salmonella"
-        species["SO"]="Salmonella"
-        species["LC"]="Listeria monocytogenes"
-        species["LF"]="Listeria monocytogenes"
-        species["SG"]="Shigella"
-        species["CA"]="Campylobacter"
-        species["VIB"]="Vibrio"
-        species["V"]="Vibrio"
-        species["EC"]="Escherichia coli"
-        species["SA"]="Staphylococcus aureus"
-        species["BP"]="Bordetella pertussis"
-        species["SP"]="Streptococcus pneumoniae"
-        species["ST"]="Streptococcus pyogenes"
-        species["ST"]="Streptococcus agalactiae"
-        species["LG"]="Legionella pneumophila"
-        species["LW"]="Legionella pneumophila"
-        species["CB"]="Corynebacterium diphtheriae"
-        species["HI"]="Haemophilus influenzae"
-        species["NM"]="Neisseria meningitidis"
-        species["M" ]="Neisseria meningitidis" 
-
-        prefix=$(echo "~{sample_id}" | grep -o '^[^0-9]*')
-
-        # Extract detected species from report
-        detected=$(awk -F'\t' '$4 == "S" {gsub(/^[ \t]+/, "", $6); print $6; exit}' "~{sample_id}.report")
-
-        # Convert both to lowercase for case-insensitive comparison
-        detected_lower=$(echo "$detected" | tr '[:upper:]' '[:lower:]')
-        expected_lower=$(echo "${species[$prefix]}" | tr '[:upper:]' '[:lower:]')
-
-        if [[ "$detected_lower" == *"$expected_lower"* ]]; then
-            echo "~{sample_id},${detected},+" > specie_detected.csv
-        else
-            echo "~{sample_id},${detected},xxx" > specie_detected.csv
-        fi
+        # Extract taxonomy information
+        awk -F'\t' '$4 == "S" {gsub(/^[ \t]+/, "", $6); print "~{sample_id}", $6; exit}' "~{sample_id}.report" > specie_detected.txt
     >>>
 
     output {
         File report = "~{sample_id}.report"
-        String specie_detected = read_string("specie_detected.csv")
+        String specie_detected = read_string("specie_detected.txt")
     }
 
     runtime {
         docker: docker
-        memory: "16GB"
         cpu: cpu
-        maxRetries: 1
-        continueOnReturnCode: true
-
+        memory: "24GB"
+        maxRetries: 0 
     }
 }
 
 task MergeReports {
     input {
-        Array[Array[String]] species_detected_list
+        Array[String] species_detected_list
     }
 
     command <<<
-        echo "Sample,Detected,Match" > species_detected.csv
-        echo "~{sep='\n' species_detected_list}" >> species_detected.csv
-        
+        echo "~{sep='\n' species_detected_list}" > species_detected_report.txt
     >>>
 
     output {
-        File species_detected = "species_detected.csv"
+        File species_detected_report = "species_detected_report.txt"
     }
 
     runtime {
