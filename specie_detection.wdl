@@ -21,7 +21,7 @@ workflow SpecieDetection {
     call SplitSamples {
         input:
         samples = GetReadsList.samples_name,
-        chunk_size = 10
+        chunk_size = 50
     }
 
     scatter(chunk in SplitSamples.sample_chunks) {
