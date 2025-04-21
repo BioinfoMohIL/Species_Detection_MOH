@@ -35,7 +35,7 @@ workflow SpecieDetection {
                 sample_id = sample_name
         }
         
-    }
+    } max_parallelism = 10
 
     call MergeReports {
         input:
@@ -194,7 +194,7 @@ task FetchReads {
 
     runtime {
         docker: docker
-        memory: "48GB"
+        memory: "16GB"
         maxRetries: 3
   }
 }
