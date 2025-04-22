@@ -193,8 +193,8 @@ task FetchReads {
 
     runtime {
         docker: docker
-        memory: select_first([task.memory_retry, "4 GB"])
         maxRetries: 1
+        continueOnReturnCode: true
   }
 }
 
@@ -242,6 +242,7 @@ task Detect_Specie {
         docker: docker
         cpu: cpu
         maxRetries: 1
+        continueOnReturnCode: true
     }
 }
 
