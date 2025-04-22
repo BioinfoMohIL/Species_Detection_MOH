@@ -1,6 +1,6 @@
 version 1.0
 
-workflow Specie_Detection {
+workflow SpecieDetection {
     input {
         String basespace_collection_id 
         String api_server
@@ -19,34 +19,26 @@ workflow Specie_Detection {
 
     }
 
-      scatter(sample_name in GetReadsList.samples_name) {
-        call FetchReads {
-          input:
-            basespace_sample_name = sample_name,
-            basespace_collection_id = basespace_collection_id,
-            api_server = api_server,
-            access_token = access_token
-        }
-
-        call Detect_Specie {
-            input:
-                read1 = FetchReads.read1,
-                read2 = FetchReads.read2,
-                sample_id = sample_name
-        }
-        
-    }
-
-    call MergeReports {
+    call FetchReads {
         input:
-            species_detected_list = Detect_Specie.specie_detected
+        samples_name = GetReadsList.samples_name,
+        basespace_collection_id = basespace_collection_id,
+        api_server = api_server,
+        access_token = access_token
     }
+
+    call Detect_Specie {
+        input:
+            reads1 = FetchReads.reads1,
+            reads2 = FetchReads.reads2,
+    }
+
+  
 
     output {
         File reads_list = GetReadsList.reads_list
-        Array[String] samples_name = GetReadsList.samples_name
-        File species_detected_report = MergeReports.species_detected_report
-    
+        File species_detected = Detect_Specie.species_detected
+        Array[File] report = Detect_Specie.report
     }
 
   
@@ -86,183 +78,215 @@ task GetReadsList {
     runtime {
         docker: docker
         preemptible: 1
+        maxRetries: 1
   }
 }
 
 task FetchReads {
     input {
-        String basespace_sample_name
-        String? basespace_sample_id   
+        Array[String] samples_name
         String basespace_collection_id
         String api_server 
         String access_token
-     
+        
+    
         String docker = "us-docker.pkg.dev/general-theiagen/theiagen/basespace_cli:1.2.1"
 
     }
 
     command <<<
-        # set basespace name and id variables
-        if [[ ! -z "~{basespace_sample_id}" ]]; then
-            sample_identifier="~{basespace_sample_name}"
-            dataset_name="~{basespace_sample_id}"
-        else
-            sample_identifier="~{basespace_sample_name}"
-            dataset_name="~{basespace_sample_name}"
-        fi
-    
-        # print all relevant input variables to stdout
-        echo -e "sample_identifier: ${sample_identifier}\ndataset_name: ${dataset_name}\nbasespace_collection_id: ~{basespace_collection_id}"
-        
-        #Set BaseSpace comand prefix
-        bs_command="bs --api-server=~{api_server} --access-token=~{access_token}"
-        echo "bs_command: ${bs_command}"
+        for sample_name in ~{sep=' ' samples_name}; do
+            basespace_sample_id=${sample_name} 
 
-        #Grab BaseSpace Run_ID from given BaseSpace Run Name
-        run_id=$(${bs_command} list run --retry | grep "~{basespace_collection_id}" | awk -F "|" '{ print $3 }' | awk '{$1=$1;print}' )
-        echo "run_id: ${run_id}" 
-        
-        if [[ ! -z "${run_id}" ]]; then 
-            #Grab BaseSpace Dataset ID from dataset lists within given run 
-            dataset_id_array=($(${bs_command} list dataset --retry --input-run=${run_id} | grep "${dataset_name}" | awk -F "|" '{ print $3 }' )) 
-            echo "dataset_id: ${dataset_id_array[*]}"
-        
-        else 
-            #Try Grabbing BaseSpace Dataset ID from project name
-            echo "Could not locate a run_id via Basespace runs, attempting to search Basespace projects now..."
-            
-            project_id=$(${bs_command} list project --retry | grep "~{basespace_collection_id}" | awk -F "|" '{ print $3 }' | awk '{$1=$1;print}' )
-            
-            echo "project_id: ${project_id}" 
+            echo "${sample_name} > sample_name.txt"  
 
-            if [[ ! -z "${project_id}" ]]; then 
-                echo "project_id identified via Basespace, now searching for dataset_id within project_id ${project_id}..."
-                dataset_id_array=($(${bs_command} list dataset --retry --project-id=${project_id} | grep "${dataset_name}" | awk -F "|" '{ print $3 }' ))  
+            if [[ ! -z "${basespace_sample_id}" ]]; then
+                sample_identifier="${sample_name}"
+                dataset_name="${basespace_sample_id}"
+            else
+                sample_identifier="${sample_name}"
+                dataset_name="${sample_name}"
+            fi
+        
+            # print all relevant input variables to stdout
+            echo -e "sample_identifier: ${sample_identifier}\ndataset_name: ${dataset_name}\nbasespace_collection_id: ~{basespace_collection_id}"
+            
+            #Set BaseSpace comand prefix
+            bs_command="bs --api-server=~{api_server} --access-token=~{access_token}"
+            echo "bs_command: ${bs_command}"
+
+            #Grab BaseSpace Run_ID from given BaseSpace Run Name
+            run_id=$(${bs_command} list run --retry | grep "~{basespace_collection_id}" | awk -F "|" '{ print $3 }' | awk '{$1=$1;print}' )
+            echo "run_id: ${run_id}" 
+            
+            if [[ ! -z "${run_id}" ]]; then 
+                #Grab BaseSpace Dataset ID from dataset lists within given run 
+                dataset_id_array=($(${bs_command} list dataset --retry --input-run=${run_id} | grep "${dataset_name}" | awk -F "|" '{ print $3 }' )) 
                 echo "dataset_id: ${dataset_id_array[*]}"
-            else       
-                echo "No run or project id found associated with input basespace_collection_id: ~{basespace_collection_id}" >&2
-                exit 1
-            fi      
-        fi
-
-        #Download reads by dataset ID
-        for index in ${!dataset_id_array[@]}; do
-            dataset_id=${dataset_id_array[$index]}
-            mkdir ./dataset_${dataset_id} && cd ./dataset_${dataset_id}
-        
-            echo "dataset download: ${bs_command} download dataset -i ${dataset_id} -o . --retry"
-            ${bs_command} download dataset --retry -i ${dataset_id} -o . --retry && cd ..
-            echo -e "downloaded data: \n $(ls ./dataset_*/*)"
-        done
-
-        # rename FASTQ files to add back in underscores that Illumina/Basespace changed into hyphens
-        echo "Concatenating and renaming FASTQ files to add back underscores in basespace_sample_name"
-        # setting a new bash variable to use for renaming during concatenation of FASTQs
-        # SAMPLENAME_HYPHEN_INSTEAD_OF_UNDERSCORES=$(echo $sample_identifier | sed 's|_|-|g' | sed 's|\.|-|g')
-
-        # echo $SAMPLENAME_HYPHEN_INSTEAD_OF_UNDERSCORES > 'sample_id.txt'
-
-        echo $sample_identifier > 'sample_id.txt'
- 
-
-        for fwd_read in ./dataset_*/${sample_identifier}_*R1_*.fastq.gz; do
-            if [[ -s $fwd_read ]]; then
-                read1_name=$(basename "$fwd_read")
-
-                echo ${read1_name} > read1_name.txt
-                cat $fwd_read      > fwd.fastq.gz
+            
+            else 
+                #Try Grabbing BaseSpace Dataset ID from project name
+                echo "Could not locate a run_id via Basespace runs, attempting to search Basespace projects now..."
                 
-            fi
-        done
+                project_id=$(${bs_command} list project --retry | grep "~{basespace_collection_id}" | awk -F "|" '{ print $3 }' | awk '{$1=$1;print}' )
+                
+                echo "project_id: ${project_id}" 
 
-        for rev_read in ./dataset_*/${sample_identifier}_*R2_*.fastq.gz; do
-            if [[ -s $rev_read ]]; then
-                read2_name=$(basename "$rev_read")
-
-                echo ${read2_name} > read2_name.txt
-                cat $rev_read      > rev.fastq.gz
+                if [[ ! -z "${project_id}" ]]; then 
+                    echo "project_id identified via Basespace, now searching for dataset_id within project_id ${project_id}..."
+                    dataset_id_array=($(${bs_command} list dataset --retry --project-id=${project_id} | grep "${dataset_name}" | awk -F "|" '{ print $3 }' ))  
+                    echo "dataset_id: ${dataset_id_array[*]}"
+                else       
+                    echo "No run or project id found associated with input basespace_collection_id: ~{basespace_collection_id}" >&2
+                    exit 1
+                fi      
             fi
+
+            #Download reads by dataset ID
+            for index in ${!dataset_id_array[@]}; do
+                dataset_id=${dataset_id_array[$index]}
+                mkdir ./dataset_${dataset_id} && cd ./dataset_${dataset_id}
+            
+                echo "dataset download: ${bs_command} download dataset -i ${dataset_id} -o . --retry"
+                ${bs_command} download dataset --retry -i ${dataset_id} -o . --retry && cd ..
+                echo -e "downloaded data: \n $(ls ./dataset_*/*)"
+            done
+
+            # rename FASTQ files to add back in underscores that Illumina/Basespace changed into hyphens
+            echo "Concatenating and renaming FASTQ files to add back underscores in basespace_sample_name"
+            # setting a new bash variable to use for renaming during concatenation of FASTQs
+            # SAMPLENAME_HYPHEN_INSTEAD_OF_UNDERSCORES=$(echo $sample_identifier | sed 's|_|-|g' | sed 's|\.|-|g')
+
+            # echo $SAMPLENAME_HYPHEN_INSTEAD_OF_UNDERSCORES > 'sample_id.txt'
+
+            echo $sample_identifier > 'sample_id.txt'
+    
+
+            for fwd_read in ./dataset_*/${sample_identifier}_*R1_*.fastq.gz; do
+                if [[ -s $fwd_read ]]; then
+                    read1_name=$(basename "$fwd_read")
+
+                    echo ${read1_name} > ${sample_identifier}_read1_name.txt
+                    cat $fwd_read      > ${sample_identifier}_R1.fastq.gz
+                    
+                fi
+            done
+
+            for rev_read in ./dataset_*/${sample_identifier}_*R2_*.fastq.gz; do
+                if [[ -s $rev_read ]]; then
+                    read2_name=$(basename "$rev_read")
+
+                    echo ${read2_name} > ${sample_identifier}_read2_name.txt
+                    cat $rev_read      > ${sample_identifier}_R2.fastq.gz
+                fi
+            done
         done
     >>>
 
     output {
-        # String read1_name = read_string('read1_name.txt') 
-        # String read2_name = read_string('read2_name.txt')  
-        File read1          = 'fwd.fastq.gz'
-        File read2          = 'rev.fastq.gz'
+        Array[File] reads1 = glob("*_R1.fastq.gz")
+        Array[File] reads2 = glob("*_R2.fastq.gz")
     }
 
     runtime {
         docker: docker
-        memory: "32GB"
+        memory: "16GB"
         maxRetries: 1
   }
 }
 
 task Detect_Specie {
-  input {
-    File read1
-    File read2
-    String sample_id
+    input {
+        Array[File] reads1
+        Array[File] reads2
     
-    String docker = "bioinfomoh/specie_detection:1"
-    Int cpu = 20
-  
+        String docker = "bioinfomoh/specie_detection:1"
+        Int cpu = 25
+    
   }
+
   command <<<
-        mode=""
-        compressed=""
+        reads1_fetched=(~{sep=' ' reads1})
+        for read1 in ${reads1_fetched[@]};do
+            basename=$(basename ${read1})
+            sample_id=${basename%%_R1.fastq.gz}
+            read2=$(printf '%s\n' ~{sep=" " reads2} | grep "${sample_id}_R2.fastq.gz" || true)
 
-        # Check if paired mode should be used
-        if ! [ -z "~{read2}" ]; then
-            echo "Reads are paired..."
-            mode="--paired"
-        fi
+            if [[ -n "$read2" ]]; then
+                echo "Reads are paired..."
+                mode="--paired"
+            fi
 
-        # Determine if reads are compressed
-        if [[ "~{read1}" == *.gz ]]; then
-            echo "Reads are compressed..."
-            compressed="--gzip-compressed"
-        fi
+            # Determine if reads are compressed
+            if [[ "${read1}" == *.gz ]]; then
+                echo "Reads are compressed..."
+                compressed="--gzip-compressed"
+            fi
 
-        # Run Kraken2
-        echo "Running Kraken2..."
-        kraken2 $mode $compressed --threads "~{cpu}" --use-names --db /app/db/kraken_db \
-            --report "~{sample_id}.report" --paired "~{read1}" "~{read2}" --output -
+            # Run Kraken2
+            echo "Running Kraken2..."
+            kraken2 $mode $compressed --threads "~{cpu}" --use-names --db /app/db/kraken_db \
+                --report "${sample_id}.report" --paired "${read1}" "${read2}" --output -
 
-        # Extract taxonomy information
-        awk -F'\t' '$4 == "S" {gsub(/^[ \t]+/, "", $6); print "~{sample_id}", $6; exit}' "~{sample_id}.report" > specie_detected.txt
+            # Extract detected species from report
+            detected=$(awk -F'\t' '$4 == "S" {gsub(/^[ \t]+/, "", $6); print $6; exit}' "${sample_id}.report")
+
+            declare -A species
+            species["NM"]="Neisseria Meningitidis"
+            species["NG"]="Neisseria Gonorrhoeae"
+            species["HI"]="Haemophilus Influenzae"
+            species["SH"]="Salmonella"
+            species["SO"]="Salmonella"
+            species["LC"]="Listeria monocytogenes"
+            species["LF"]="Listeria monocytogenes"
+            species["SG"]="Shigella"
+            species["CA"]="Campylobacter"
+            species["VIB"]="Vibrio"
+            species["V"]="Vibrio"
+            species["EC"]="Escherichia coli"
+            species["SA"]="Staphylococcus aureus"
+            species["BP"]="Bordetella pertussis"
+            species["SP"]="Streptococcus pneumoniae"
+            species["ST"]="Streptococcus pyogenes"
+            species["ST"]="Streptococcus agalactiae"
+            species["LG"]="Legionella pneumophila"
+            species["LW"]="Legionella pneumophila"
+            species["CB"]="Corynebacterium diphtheriae"
+            species["HI"]="Haemophilus influenzae"
+            species["NM"]="Neisseria meningitidis"
+            species["M" ]="Neisseria meningitidis" 
+
+            prefix=$(echo "${sample_id}" | grep -o '^[^0-9]*')
+
+        
+            # Convert both to lowercase for case-insensitive comparison
+            detected_lower=$(echo "$detected" | tr '[:upper:]' '[:lower:]')
+            expected_lower=$(echo "${species[$prefix]}" | tr '[:upper:]' '[:lower:]')
+
+            if [[ "$detected_lower" == *"$expected_lower"* ]]; then
+                echo "${sample_id},${detected},+" >> species_detected.csv
+            else
+                echo "${sample_id},${detected},xxx" >> species_detected.csv
+            fi
+        done
     >>>
 
-    output {
-        File report = "~{sample_id}.report"
-        String specie_detected = read_string("specie_detected.txt")
+     output {
+        Array[File] report = glob("*.report")
+        File species_detected = "species_detected.csv"
     }
 
     runtime {
         docker: docker
+        memory: "16GB"
         cpu: cpu
-        memory: "24GB"
-        maxRetries: 0 
+        maxRetries: 1
+        continueOnReturnCode: true
+
     }
+
+  
 }
 
-task MergeReports {
-    input {
-        Array[String] species_detected_list
-    }
 
-    command <<<
-        echo "~{sep='\n' species_detected_list}" > species_detected_report.txt
-    >>>
-
-    output {
-        File species_detected_report = "species_detected_report.txt"
-    }
-
-    runtime {
-        docker: "ubuntu:20.04"
-
-    }
-}
 
