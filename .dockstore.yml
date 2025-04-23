@@ -2,4 +2,4 @@ version: 1.2
 workflows:
  - name: Specie_Detection_MOH
    subclass: WDL
-   primaryDescriptorPath: /specie_detection.wdl
+   primaryDescriptorPath: /specie_detection_master.wdl
