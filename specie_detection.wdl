@@ -27,24 +27,24 @@ workflow Specie_Detection {
             access_token = access_token
         }
 
-        call Detect_Specie {
-            input:
-                read1 = FetchReads.read1,
-                read2 = FetchReads.read2,
-                sample_id = sample_name
-        }
+        # call Detect_Specie {
+        #     input:
+        #         read1 = FetchReads.read1,
+        #         read2 = FetchReads.read2,
+        #         sample_id = sample_name
+        # }
         
     }
 
-    call MergeReports {
-        input:
-            species_detected_list = Detect_Specie.specie_detected
-    }
+    # call MergeReports {
+    #     input:
+    #         species_detected_list = Detect_Specie.specie_detected
+    # }
 
     output {
         File reads_list = GetReadsList.reads_list
         Array[String] samples_name = GetReadsList.samples_name
-        File species_detected_report = MergeReports.species_detected_report
+        # File species_detected_report = MergeReports.species_detected_report
     
     }
 
@@ -187,14 +187,13 @@ task FetchReads {
     output {
         # String read1_name = read_string('read1_name.txt') 
         # String read2_name = read_string('read2_name.txt')  
-        File read1          = 'fwd.fastq.gz'
-        File read2          = 'rev.fastq.gz'
+        # File read1          = 'fwd.fastq.gz'
+        # File read2          = 'rev.fastq.gz'
     }
 
     runtime {
         docker: docker
         maxRetries: 1
-        continueOnReturnCode: true
   }
 }
 
@@ -242,7 +241,6 @@ task Detect_Specie {
         docker: docker
         cpu: cpu
         maxRetries: 1
-        continueOnReturnCode: true
     }
 }
 
