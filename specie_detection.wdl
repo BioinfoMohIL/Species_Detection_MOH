@@ -48,6 +48,7 @@ workflow SpecieDetection {
     
     }
 
+}
   
 task GetReadsList {
     input {  
