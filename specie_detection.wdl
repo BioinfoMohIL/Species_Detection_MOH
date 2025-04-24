@@ -293,5 +293,10 @@ task MergeReports {
     output {
         File species_detected = "species_detected.csv"
     }
+
+    runtime {
+        docker: "ubuntu:20.04"
+
+    }
 }
 
