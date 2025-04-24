@@ -205,7 +205,6 @@ task Detect_Specie {
   
   }
   command <<<
-          command <<<
         mode=""
         compressed=""
 
