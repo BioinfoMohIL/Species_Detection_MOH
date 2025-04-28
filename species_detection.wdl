@@ -1,6 +1,6 @@
 version 1.0
 
-workflow SpecieDetection {
+workflow SpeciesDetection {
     input {
         String basespace_collection_id 
         String api_server
@@ -27,7 +27,7 @@ workflow SpecieDetection {
             access_token = access_token
         }
 
-        call Detect_Specie {
+        call Detect_Species {
             input:
                 read1 = FetchReads.read1,
                 read2 = FetchReads.read2,
@@ -38,7 +38,7 @@ workflow SpecieDetection {
 
     call MergeReports {
         input:
-            species_detected_list = Detect_Specie.specie_detected
+            species_detected_list = Detect_Species.species_detected
     }
 
     output {
@@ -60,19 +60,28 @@ task GetReadsList {
 
     }
 
-    command <<<       
+    command <<<     
         bs project content --name ~{basespace_collection_id} \
             --api-server=~{api_server} \
             --access-token=~{access_token} \
             --retry > reads_list.txt
 
-        # Fetch the samplename - cut by _S to prevent to cut resequenced sample ( <sample name>_r )
+        #Fetch the samplename - cut by _S to prevent to cut resequenced sample ( <sample name>_r )
         if [ -z "~{sample_prefix}" ]; then
             grep -o "[A-Za-z0-9_]*_R1_[0-9]*\.fastq\.gz" reads_list.txt | sed 's/_S[0-9]*_L[0-9]*_R1_.*\.fastq\.gz//' > sample_names.txt
         else
             grep -o "~{sample_prefix}[A-Za-z0-9_]*_R1_[0-9]*\.fastq\.gz" reads_list.txt | sed 's/_S[0-9]*_L[0-9]*_R1_.*\.fastq\.gz//' > sample_names.txt
         fi
 
+        # if [ -z "~{sample_prefix}" ]; then
+        #         grep -o "[A-Za-z0-9_-]*_S[0-9]*_L[0-9]*_R1_[0-9]*\.fastq\.gz" reads_list.txt \
+        #         | sed 's/_S[0-9]*_L[0-9]*_R1_.*\.fastq\.gz//' \
+        #         > sample_names.txt
+        #     else
+        #         grep -o "~{sample_prefix}[A-Za-z0-9_-]*_S[0-9]*_L[0-9]*_R1_[0-9]*\.fastq\.gz" reads_list.txt \
+        #         | sed 's/_S[0-9]*_L[0-9]*_R1_.*\.fastq\.gz//' \
+        #         > sample_names.txt
+        # fi
     
     >>>
 
@@ -184,20 +193,21 @@ task FetchReads {
     >>>
 
     output {
-        File read1          = 'fwd.fastq.gz'
-        File read2          = 'rev.fastq.gz'
+        File? read1          = 'fwd.fastq.gz'
+        File? read2          = 'rev.fastq.gz'
     }
 
     runtime {
         docker: docker
         maxRetries: 1
+        
   }
 }
 
-task Detect_Specie {
+task Detect_Species {
   input {
-    File read1
-    File read2
+    File? read1
+    File? read2
     String sample_id
     
     String docker = "bioinfomoh/specie_detection:1"
@@ -207,6 +217,12 @@ task Detect_Specie {
   command <<<
         mode=""
         compressed=""
+
+         if [ ! -s "~{read1}" ]; then
+            echo "~{sample_id} not found" > "~{sample_id}.report"
+            echo "~{sample_id},not_found,xxx" > species_detected.csv
+            exit 0
+        fi
 
         # Check if paired mode should be used
         if ! [ -z "~{read2}" ]; then
@@ -260,15 +276,15 @@ task Detect_Specie {
         expected_lower=$(echo "${species[$prefix]}" | tr '[:upper:]' '[:lower:]')
 
         if [[ "$detected_lower" == *"$expected_lower"* ]]; then
-            echo "~{sample_id},${detected},+" > specie_detected.csv
+            echo "~{sample_id},${detected},+" > species_detected.csv
         else
-            echo "~{sample_id},${detected},xxx" > specie_detected.csv
+            echo "~{sample_id},${detected},xxx" > species_detected.csv
         fi
     >>>
 
     output {
         File report = "~{sample_id}.report"
-        String specie_detected = read_string("specie_detected.csv")
+        String species_detected = read_string("species_detected.csv")
     }
 
     runtime {
