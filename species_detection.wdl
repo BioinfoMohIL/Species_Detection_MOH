@@ -38,7 +38,7 @@ workflow SpeciesDetection {
 
     call MergeReports {
         input:
-            species_detected_list = Detect_Species.species_detected
+            species_detected_list = Detect_Species.sample_detected
     }
 
     output {
@@ -67,21 +67,21 @@ task GetReadsList {
             --retry > reads_list.txt
 
         #Fetch the samplename - cut by _S to prevent to cut resequenced sample ( <sample name>_r )
-        if [ -z "~{sample_prefix}" ]; then
-            grep -o "[A-Za-z0-9_]*_R1_[0-9]*\.fastq\.gz" reads_list.txt | sed 's/_S[0-9]*_L[0-9]*_R1_.*\.fastq\.gz//' > sample_names.txt
-        else
-            grep -o "~{sample_prefix}[A-Za-z0-9_]*_R1_[0-9]*\.fastq\.gz" reads_list.txt | sed 's/_S[0-9]*_L[0-9]*_R1_.*\.fastq\.gz//' > sample_names.txt
-        fi
-
         # if [ -z "~{sample_prefix}" ]; then
-        #         grep -o "[A-Za-z0-9_-]*_S[0-9]*_L[0-9]*_R1_[0-9]*\.fastq\.gz" reads_list.txt \
-        #         | sed 's/_S[0-9]*_L[0-9]*_R1_.*\.fastq\.gz//' \
-        #         > sample_names.txt
-        #     else
-        #         grep -o "~{sample_prefix}[A-Za-z0-9_-]*_S[0-9]*_L[0-9]*_R1_[0-9]*\.fastq\.gz" reads_list.txt \
-        #         | sed 's/_S[0-9]*_L[0-9]*_R1_.*\.fastq\.gz//' \
-        #         > sample_names.txt
+        #     grep -o "[A-Za-z0-9_]*_R1_[0-9]*\.fastq\.gz" reads_list.txt | sed 's/_S[0-9]*_L[0-9]*_R1_.*\.fastq\.gz//' > sample_names.txt
+        # else
+        #     grep -o "~{sample_prefix}[A-Za-z0-9_]*_R1_[0-9]*\.fastq\.gz" reads_list.txt | sed 's/_S[0-9]*_L[0-9]*_R1_.*\.fastq\.gz//' > sample_names.txt
         # fi
+
+        if [ -z "~{sample_prefix}" ]; then
+                grep -o "[A-Za-z0-9_-]*_S[0-9]*_L[0-9]*_R1_[0-9]*\.fastq\.gz" reads_list.txt \
+                | sed 's/_S[0-9]*_L[0-9]*_R1_.*\.fastq\.gz//' \
+                > sample_names.txt
+            else
+                grep -o "~{sample_prefix}[A-Za-z0-9_-]*_S[0-9]*_L[0-9]*_R1_[0-9]*\.fastq\.gz" reads_list.txt \
+                | sed 's/_S[0-9]*_L[0-9]*_R1_.*\.fastq\.gz//' \
+                > sample_names.txt
+        fi
     
     >>>
 
@@ -276,15 +276,15 @@ task Detect_Species {
         expected_lower=$(echo "${species[$prefix]}" | tr '[:upper:]' '[:lower:]')
 
         if [[ "$detected_lower" == *"$expected_lower"* ]]; then
-            echo "~{sample_id},${detected},+" > species_detected.csv
+            echo "~{sample_id},${detected},+" > ~{sample_id}_sample_detected.csv
         else
-            echo "~{sample_id},${detected},xxx" > species_detected.csv
+            echo "~{sample_id},${detected},xxx" > ~{sample_id}_sample_detected.csv
         fi
     >>>
 
     output {
         File report = "~{sample_id}.report"
-        String species_detected = read_string("species_detected.csv")
+        String sample_detected = read_string("~{sample_id}_sample_detected.csv")
     }
 
     runtime {
