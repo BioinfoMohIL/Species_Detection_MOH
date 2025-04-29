@@ -275,8 +275,18 @@ task Detect_Species {
         detected_lower=$(echo "$detected" | tr '[:upper:]' '[:lower:]')
         expected_lower=$(echo "${species[$prefix]}" | tr '[:upper:]' '[:lower:]')
 
-        if [[ "$detected_lower" == *"$expected_lower"* ]]; then
+        if [[ "$prefix" == "ST" && "$detected" == *"Streptococcus"* ]]; then
+            # handle ST samples (can be pyogenes or agalactiae)
+            echo "Met ST , and detected Streptococcus"
             echo "~{sample_id},${detected},+" > ~{sample_id}_sample_detected.csv
+
+        elif [[ "$prefix" == "SG" && "$detected" == "Escherichia coli" ]]; then
+            # handle Shigella (SG) - Kraken detect it as EC
+            echo "~{sample_id},${detected},??" > ~{sample_id}_sample_detected.csv
+
+        elif [[ "$detected_lower" == *"$expected_lower"* ]]; then
+            echo "~{sample_id},${detected},+" > ~{sample_id}_sample_detected.csv
+            
         else
             echo "~{sample_id},${detected},xxx" > ~{sample_id}_sample_detected.csv
         fi
