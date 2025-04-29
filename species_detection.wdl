@@ -66,12 +66,6 @@ task GetReadsList {
             --access-token=~{access_token} \
             --retry > reads_list.txt
 
-        #Fetch the samplename - cut by _S to prevent to cut resequenced sample ( <sample name>_r )
-        # if [ -z "~{sample_prefix}" ]; then
-        #     grep -o "[A-Za-z0-9_]*_R1_[0-9]*\.fastq\.gz" reads_list.txt | sed 's/_S[0-9]*_L[0-9]*_R1_.*\.fastq\.gz//' > sample_names.txt
-        # else
-        #     grep -o "~{sample_prefix}[A-Za-z0-9_]*_R1_[0-9]*\.fastq\.gz" reads_list.txt | sed 's/_S[0-9]*_L[0-9]*_R1_.*\.fastq\.gz//' > sample_names.txt
-        # fi
 
         if [ -z "~{sample_prefix}" ]; then
                 grep -o "[A-Za-z0-9_-]*_S[0-9]*_L[0-9]*_R1_[0-9]*\.fastq\.gz" reads_list.txt \
@@ -109,6 +103,9 @@ task FetchReads {
     }
 
     command <<<
+        # Trim basespace_collection_id (run_name) because spaces cause problem
+        run_name_trimmed=$(echo "~{basespace_collection_id}" | awk '{$1=$1;print}')
+
         # set basespace name and id variables
         if [[ ! -z "~{basespace_sample_id}" ]]; then
             sample_identifier="~{basespace_sample_name}"
@@ -119,14 +116,14 @@ task FetchReads {
         fi
     
         # print all relevant input variables to stdout
-        echo -e "sample_identifier: ${sample_identifier}\ndataset_name: ${dataset_name}\nbasespace_collection_id: ~{basespace_collection_id}"
+        echo -e "sample_identifier: ${sample_identifier}\ndataset_name: ${dataset_name}\nbasespace_collection_id: $run_name_trimmed"
         
         #Set BaseSpace comand prefix
         bs_command="bs --api-server=~{api_server} --access-token=~{access_token}"
         echo "bs_command: ${bs_command}"
 
         #Grab BaseSpace Run_ID from given BaseSpace Run Name
-        run_id=$(${bs_command} list run --retry | grep "~{basespace_collection_id}" | awk -F "|" '{ print $3 }' | awk '{$1=$1;print}' )
+        run_id=$(${bs_command} list run --retry | grep "$run_name_trimmed" | awk -F "|" '{ print $3 }' | awk '{$1=$1;print}' )
         echo "run_id: ${run_id}" 
         
         if [[ ! -z "${run_id}" ]]; then 
@@ -138,7 +135,7 @@ task FetchReads {
             #Try Grabbing BaseSpace Dataset ID from project name
             echo "Could not locate a run_id via Basespace runs, attempting to search Basespace projects now..."
             
-            project_id=$(${bs_command} list project --retry | grep "~{basespace_collection_id}" | awk -F "|" '{ print $3 }' | awk '{$1=$1;print}' )
+            project_id=$(${bs_command} list project --retry | grep "$run_name_trimmed" | awk -F "|" '{ print $3 }' | awk '{$1=$1;print}' )
             
             echo "project_id: ${project_id}" 
 
@@ -147,7 +144,7 @@ task FetchReads {
                 dataset_id_array=($(${bs_command} list dataset --retry --project-id=${project_id} | grep "${dataset_name}" | awk -F "|" '{ print $3 }' ))  
                 echo "dataset_id: ${dataset_id_array[*]}"
             else       
-                echo "No run or project id found associated with input basespace_collection_id: ~{basespace_collection_id}" >&2
+                echo "No run or project id found associated with input basespace_collection_id: $run_name_trimmed" >&2
                 exit 1
             fi      
         fi
