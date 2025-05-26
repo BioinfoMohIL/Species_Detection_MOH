@@ -1,60 +1,74 @@
 version 1.0
 
 workflow SpeciesDetection {
-    input {
-        String basespace_collection_id 
-        String api_server
-        String access_token
-        String? sample_prefix
-
-    }
-
-    call GetReadsList {
-        input:
-            basespace_collection_id = basespace_collection_id,
-            access_token = access_token,
-            api_server = api_server,
-            sample_prefix = sample_prefix
-
-    }
-
-    scatter(sample_name in GetReadsList.samples_name) {
-        call FetchReads {
-          input:
-            basespace_sample_name = sample_name,
-            basespace_collection_id = basespace_collection_id,
-            api_server = api_server,
-            access_token = access_token
-        }
-
-        call Detect_Species {
-            input:
-                read1 = FetchReads.read1,
-                read2 = FetchReads.read2,
-                sample_id = sample_name
-        }
-        
-    }
-
-    call MergeReports {
-        input:
-            species_detected_list = Detect_Species.sample_detected
-    }
-
-    output {
-        File reads_list = GetReadsList.reads_list
-        Array[String] samples_name = GetReadsList.samples_name
-        File species_detected = MergeReports.species_detected
-    
-    }
-
-}
+  input {
+    String? basespace_collection_id
+    String? api_server
+    String? access_token
+    String? sample_prefix
+    Array[File]? reads1
+    Array[File]? reads2
+  }
   
+    if (!defined(basespace_collection_id) && defined(reads1) && defined(reads2)) {
+    Array[File] unwrapped_reads1 = select_first([reads1])
+    Array[File] unwrapped_reads2 = select_first([reads2])
+
+    scatter (i in range(length(unwrapped_reads1))) {
+      call Detect_Species as Detect_Species_FromReads {
+        input:
+          read1 = unwrapped_reads1[i],
+          read2 = unwrapped_reads2[i],
+          sample_id = sub(basename(unwrapped_reads1[i]), "_R[12].*", "")
+      }
+    }
+  }
+  
+    if (defined(basespace_collection_id)) {
+    # When fetching reads from BaseSpace
+    call GetReadsList {
+      input:
+        basespace_collection_id = basespace_collection_id,
+        access_token = access_token,
+        api_server = api_server,
+        sample_prefix = sample_prefix
+    }
+    
+    scatter (sample_name in GetReadsList.samples_name) {
+      call FetchReads {
+        input:
+          basespace_sample_name = sample_name,
+          basespace_collection_id = basespace_collection_id,
+          api_server = api_server,
+          access_token = access_token
+      }
+      
+      call Detect_Species as Detect_Species_FromBaseSpace {
+        input:
+          read1 = FetchReads.read1,
+          read2 = FetchReads.read2,
+          sample_id = sample_name
+      }
+    }
+  }
+  
+ 
+  call MergeReports {
+    input:
+      species_detected_list = select_first([Detect_Species_FromBaseSpace.sample_detected, Detect_Species_FromReads.sample_detected])
+  }
+  
+  output {
+    File? reads_list = GetReadsList.reads_list
+    Array[String]? samples_name = GetReadsList.samples_name
+    File species_detected = MergeReports.species_detected
+  }
+}
 task GetReadsList {
     input {  
-        String basespace_collection_id
-        String api_server 
-        String access_token
+        String? basespace_collection_id
+        String? api_server 
+        String? access_token
         String? sample_prefix
         String docker = "us-docker.pkg.dev/general-theiagen/theiagen/basespace_cli:1.2.1"
 
@@ -94,9 +108,9 @@ task FetchReads {
     input {
         String basespace_sample_name
         String? basespace_sample_id   
-        String basespace_collection_id
-        String api_server 
-        String access_token
+        String? basespace_collection_id
+        String? api_server 
+        String? access_token
      
         String docker = "us-docker.pkg.dev/general-theiagen/theiagen/basespace_cli:1.2.1"
 
@@ -321,4 +335,3 @@ task MergeReports {
 
     }
 }
-
