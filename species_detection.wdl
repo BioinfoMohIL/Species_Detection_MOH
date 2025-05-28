@@ -66,6 +66,8 @@ task GetReadsList {
             --access-token=~{access_token} \
             --retry > reads_list.txt
 
+        # Create a a samples name list from the reads_list
+        # -> Fetch the name form the R1 read, and remove if got a 'Undetermined' read
 
         if [ -z "~{sample_prefix}" ]; then
             grep -o "[A-Za-z0-9_-]*_S[0-9]*_L[0-9]*_R1_[0-9]*\.fastq\.gz" reads_list.txt \
@@ -75,14 +77,14 @@ task GetReadsList {
         else
             grep -o "~{sample_prefix}[A-Za-z0-9_-]*_S[0-9]*_L[0-9]*_R1_[0-9]*\.fastq\.gz" reads_list.txt \
             | sed 's/_S[0-9]*_L[0-9]*_R1_.*\.fastq\.gz//' \
-            > sample_names.txt
+            > samples_names.txt
         fi
     
     >>>
 
     output {
         File reads_list = "reads_list.txt"
-        Array[String] samples_name = read_lines("sample_names.txt")
+        Array[String] samples_name = read_lines("samples_name.txt")
     }
 
     runtime {
@@ -197,7 +199,7 @@ task FetchReads {
 
     runtime {
         docker: docker
-        maxRetries: 2
+        maxRetries: 1
         
   }
 }
@@ -305,7 +307,7 @@ task Detect_Species {
     runtime {
         docker: docker
         cpu: cpu
-        maxRetries: 2
+        maxRetries: 1
     }
 }
 
