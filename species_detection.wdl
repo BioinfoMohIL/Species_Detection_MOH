@@ -14,7 +14,7 @@ workflow SpeciesDetection {
             basespace_collection_id = basespace_collection_id,
             access_token = access_token,
             api_server = api_server,
-            sample_prefix = sample_prefix
+            sample_prefix = select_first([sample_prefix, ""])
 
     }
 
@@ -68,18 +68,16 @@ task GetReadsList {
 
         # Create a a samples name list from the reads_list
         # -> Fetch the name form the R1 read, and remove if got a 'Undetermined' read
-
-        if [ -z "~{sample_prefix}" ]; then
+        if [ -z ~{sample_prefix} ]; then
             grep -o "[A-Za-z0-9_-]*_S[0-9]*_L[0-9]*_R1_[0-9]*\.fastq\.gz" reads_list.txt \
             | sed 's/_S[0-9]*_L[0-9]*_R1_.*\.fastq\.gz//' \
             | grep -v "^Undetermined$" \
-            > sample_names.txt
+            > samples_name.txt
         else
             grep -o "~{sample_prefix}[A-Za-z0-9_-]*_S[0-9]*_L[0-9]*_R1_[0-9]*\.fastq\.gz" reads_list.txt \
             | sed 's/_S[0-9]*_L[0-9]*_R1_.*\.fastq\.gz//' \
-            > samples_names.txt
+            > samples_name.txt
         fi
-    
     >>>
 
     output {
@@ -102,7 +100,6 @@ task FetchReads {
         String access_token
      
         String docker = "us-docker.pkg.dev/general-theiagen/theiagen/basespace_cli:1.2.1"
-
     }
 
     command <<<
