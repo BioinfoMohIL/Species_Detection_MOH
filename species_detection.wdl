@@ -72,7 +72,6 @@ task GetReadsList {
             | sed 's/_S[0-9]*_L[0-9]*_R1_.*\.fastq\.gz//' \
             | grep -v "^Undetermined$" \
             > sample_names.txt
-        fi
         else
             grep -o "~{sample_prefix}[A-Za-z0-9_-]*_S[0-9]*_L[0-9]*_R1_[0-9]*\.fastq\.gz" reads_list.txt \
             | sed 's/_S[0-9]*_L[0-9]*_R1_.*\.fastq\.gz//' \
