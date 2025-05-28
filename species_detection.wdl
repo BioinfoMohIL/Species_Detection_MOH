@@ -241,8 +241,8 @@ task Detect_Species {
             kraken2 $mode $compressed --threads "~{cpu}" --use-names --db /app/db/kraken_db \
                 --report "~{sample_id}.report" --paired "~{read1}" "~{read2}" --output -
 
-            if [[  ]]
             echo "~{sample_id}" > ~{sample_id}_sample_detected.csv
+            
             declare -A species
             species["NM"]="Neisseria Meningitidis"
             species["NG"]="Neisseria Gonorrhoeae"
