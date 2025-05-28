@@ -196,7 +196,7 @@ task FetchReads {
 
     runtime {
         docker: docker
-        maxRetries: 1
+        maxRetries: 2
         
   }
 }
@@ -283,9 +283,13 @@ task Detect_Species {
 
         elif [[ "$detected_lower" == *"$expected_lower"* ]]; then
             echo "~{sample_id},${detected},+" > ~{sample_id}_sample_detected.csv
-            
-        else
-            echo "~{sample_id},${detected},xxx" > ~{sample_id}_sample_detected.csv
+
+        else   
+            if [[ -n "${detected}" && "${detected}" != "" ]]; then
+                echo "~{sample_id},${detected},xxx" > ~{sample_id}_sample_detected.csv
+            else
+                echo "~{sample_id},,xxx" > ~{sample_id}_sample_detected.csv
+            fi
         fi
     >>>
 
@@ -297,7 +301,7 @@ task Detect_Species {
     runtime {
         docker: docker
         cpu: cpu
-        maxRetries: 1
+        maxRetries: 2
     }
 }
 
