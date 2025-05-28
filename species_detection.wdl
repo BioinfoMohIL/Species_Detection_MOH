@@ -304,7 +304,6 @@ task Detect_Species {
     runtime {
         docker: docker
         cpu: cpu
-        maxRetries: 1
     }
 }
 
